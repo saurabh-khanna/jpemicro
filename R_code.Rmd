@@ -52,7 +52,7 @@ weighted_mean_sd_multi <- function(data, vars, weight) {
 Faculty:
 
 ```{r}
-read_csv("main/table_31_51_58_59_510.csv") %>% 
+read_csv("main/faculty_national.csv") %>% 
   weighted_mean_sd_multi(c("fac_reservation", "fac_assistant_professor", "fac_associate_professor", "fac_professor", "fac_yearsinhighed", "fac_highest_degree_masters", "fac_highest_degree_phd", "fac_highest_degree_phd_in_prog",  "fac_degree_college_elite", "fac_female"), sw_f) %>% 
   t()
 ```
@@ -60,7 +60,7 @@ read_csv("main/table_31_51_58_59_510.csv") %>%
 Students:
 
 ```{r}
-read_csv("main/table_31_stu.csv") %>%
+read_csv("main/students_national.csv") %>%
   weighted_mean_sd_multi(c("reservation", "female", "age", "father_college", "mother_college"), sw_f) %>% 
   t()
 ```
@@ -69,10 +69,10 @@ read_csv("main/table_31_stu.csv") %>%
 
 Faculty Qualifications by Reservation Status at Engineering and Technology Colleges in India
 
-Weighgted means:
+Weighted means:
 
 ```{r}
-read_csv("main/table_31_51_58_59_510.csv") %>%
+read_csv("main/faculty_national.csv") %>%
   group_by(fac_reservation) %>%
   drop_na(fac_reservation) %>%
   summarise(
@@ -94,7 +94,7 @@ read_csv("main/table_31_51_58_59_510.csv") %>%
 Differences:
 
 ```{r}
-svy <- svydesign(ids = ~1, weights = ~sw_f, data = read_csv("main/table_31_51_58_59_510.csv"))
+svy <- svydesign(ids = ~1, weights = ~sw_f, data = read_csv("main/faculty_national.csv"))
 
 map_dfr(c("fac_assistant_professor", "fac_associate_professor", "fac_professor",
           "fac_yearsinhighed", "fac_highest_degree_phd", "fac_highest_degree_phd_in_prog",
@@ -124,7 +124,7 @@ Faculty Differences and Balance Checks for the Sample of Colleges with Random As
 Faculty means and sds:
 
 ```{r}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
   
 df_temp %>% 
   summarise_at(
@@ -261,7 +261,7 @@ df_temp %>%
 Regressions for Student Course Grades Measuring Quality of Instruction, Reservation vs. General Category Faculty
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 df_temp %>%
   mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
@@ -293,7 +293,7 @@ Regressions for Follow-on Course Grades and Test Scores, Reservation vs. General
 Model 1:
 
 ```{r, results='asis'}
-read_csv("main/table_55_model1.csv") %>% 
+read_csv("main/table_55_semester.csv") %>% 
   mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
   lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
@@ -302,7 +302,7 @@ read_csv("main/table_55_model1.csv") %>%
 Model 2:
 
 ```{r, results='asis'}
-read_csv("main/table_55_model2.csv") %>% 
+read_csv("main/table_55_course.csv") %>% 
   mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
   lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
@@ -311,7 +311,7 @@ read_csv("main/table_55_model2.csv") %>%
 Model 3:
 
 ```{r, results='asis'}
-read_csv("main/table_55_model3.csv") %>%
+read_csv("main/table_55_skills.csv") %>%
   lm_robust(e_g3_score ~ fac_reservation + subject + reservation_stu + female + age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
 ```
@@ -326,7 +326,7 @@ Regressions for Additional Educational Outcomes, Reservation vs. General Categor
 Model 1:
 
 ```{r, results='asis'}
-read_csv("main/table_56_model1.csv") %>% 
+read_csv("main/table_56_attend.csv") %>% 
   lm_robust(e_attend ~ fac_reservation + subject + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
 ```
@@ -334,7 +334,7 @@ read_csv("main/table_56_model1.csv") %>%
 Model 2:
 
 ```{r, results='asis'}
-read_csv("main/table_53_54.csv") %>%
+read_csv("main/random_assignment.csv") %>%
   mutate(
     miss_age = if_else(is.na(age), 1L, 0L),
     age = if_else(is.na(age), 0, age),
@@ -358,7 +358,7 @@ read_csv("main/table_53_54.csv") %>%
 Model 3:
 
 ```{r, results='asis'}
-read_csv("main/table_53_54.csv") %>%
+read_csv("main/random_assignment.csv") %>%
   mutate(
     miss_age = if_else(is.na(age), 1L, 0L),
     age = if_else(is.na(age), 0, age),
@@ -383,7 +383,7 @@ read_csv("main/table_53_54.csv") %>%
 Model 4:
 
 ```{r, results='asis'}
-read_csv("main/table_56_model4.csv") %>% 
+read_csv("main/table_56_research.csv") %>% 
   lm_robust(e_workprof_research ~ fac_reservation + survey + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
 ```
@@ -437,19 +437,19 @@ Regressions for Number of Publications per Year, Reservation Category vs. Genera
 
 ```{r, results='asis'}
 lm_pub1 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(fac_publications ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_pub2 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_pub3 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_pub4 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 
@@ -462,19 +462,19 @@ Regressions for Funding Received, Reservation vs. General Category Faculty using
 
 ```{r, results='asis'}
 lm_fund1 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(funding_yesno ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_fund2 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_fund3 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_fund4 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 
@@ -488,19 +488,19 @@ Regressions for Administrative Positions Held, Reservation vs. General Category 
 
 ```{r, results='asis'}
 lm_adm1 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(admin_position_yesno ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_adm2 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_adm3 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 lm_adm4 <-
-  read_csv("main/table_31_51_58_59_510.csv") %>%
+  read_csv("main/faculty_national.csv") %>%
   lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
 
 
@@ -513,7 +513,7 @@ knitreg(list(lm_adm1, lm_adm2, lm_adm3, lm_adm4), custom.note = "%stars", stars 
 Regressions for Student Course Grades Measuring Quality of Instruction, Reservation Category Faculty Interacted with Reservation Category Students
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 # model 1
 df_temp %>%
@@ -546,7 +546,7 @@ df_temp %>%
 Regressions for Student Course Grades Measuring Teacher-Like-Me Interactions
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 # model 1
 lm1 <-
@@ -576,7 +576,7 @@ knitreg(list(lm1, lm2, lm3), digits = 2, stars = c(0.01, 0.05, 0.1), include.ci 
 Regressions for Student Course Grades Measuring Quality of Instruction, Reservation Category Faculty Interacted with Detailed Reservation Category Student Groups
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 # model 1
 lm1 <-
@@ -615,7 +615,7 @@ Regressions for Student Course Grades Measuring Quality of Instruction, Reservat
 
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 # model 1
 lm1 <-
@@ -667,7 +667,7 @@ Tables A1 uses microdata from the 68th Round of the National Sample Survey's Emp
 Faculty:
 
 ```{r}
-read_csv("main/table_53_54.csv") %>% 
+read_csv("main/random_assignment.csv") %>% 
   distinct(facultynum, fac_reservation, fac_assistant_professor, fac_associate_professor, fac_professor, fac_yearsinhighed, fac_highest_degree_masters, fac_highest_degree_phd_in_prog, fac_highest_degree_phd, fac_degree_college_elite, fac_female) %>% 
   skim(-facultynum)
 ```
@@ -676,7 +676,7 @@ read_csv("main/table_53_54.csv") %>%
 Students:
 
 ```{r}
-read_csv("main/table_53_54.csv") %>% 
+read_csv("main/random_assignment.csv") %>% 
   distinct(studentnum, reservation_stu, female, age, father_college, mother_college) %>% 
   skim(-studentnum)
 ```
@@ -687,7 +687,7 @@ read_csv("main/table_53_54.csv") %>%
 **Panel A**
 
 ```{r}
-read_csv("appendix/table_C1_panela.csv") %>%
+read_csv("appendix/table_C1_a.csv") %>%
   group_by(semester) %>% 
   summarise(
     n = sum(n()),
@@ -706,7 +706,7 @@ read_csv("appendix/table_C1_panela.csv") %>%
 Semesters:
 
 ```{r}
-read_csv("main/table_53_54.csv") %>%
+read_csv("main/random_assignment.csv") %>%
   tabyl(semester, fac_reservation, show_na = F) %>% 
   as_tibble() %>% 
   select(semester, res = `1`, general = `0`) %>% 
@@ -720,7 +720,7 @@ read_csv("main/table_53_54.csv") %>%
 Introductory courses:
 
 ```{r}
-read_csv("main/table_53_54.csv") %>% 
+read_csv("main/random_assignment.csv") %>% 
   tabyl(introductory, fac_reservation, show_na = F) %>% 
   as_tibble() %>%
   arrange(desc(introductory)) %>%
@@ -735,7 +735,7 @@ read_csv("main/table_53_54.csv") %>%
 **Panel C**
 
 ```{r}
-read_csv("appendix/table_C1_panelc.csv") %>%
+read_csv("appendix/table_C1_c.csv") %>%
   group_by(year) %>% 
   summarise(
     n = sum(n()),
@@ -754,7 +754,7 @@ read_csv("appendix/table_C1_panelc.csv") %>%
 ```{r}
 # new table code
 
-read_csv("main/table_31_stu.csv") %>% 
+read_csv("main/students_national.csv") %>% 
   drop_na(reservation) %>%
   group_by(reservation) %>%
   summarise(
@@ -771,15 +771,15 @@ read_csv("main/table_31_stu.csv") %>%
 
 
 ```{r, results='asis'}
-read_csv("main/table_31_stu.csv") %>% difference_in_means(female ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+read_csv("main/students_national.csv") %>% difference_in_means(female ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
 
-read_csv("main/table_31_stu.csv") %>% difference_in_means(age ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+read_csv("main/students_national.csv") %>% difference_in_means(age ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
 
-read_csv("main/table_31_stu.csv") %>% difference_in_means(father_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+read_csv("main/students_national.csv") %>% difference_in_means(father_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
 
-read_csv("main/table_31_stu.csv") %>% difference_in_means(mother_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+read_csv("main/students_national.csv") %>% difference_in_means(mother_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
 
-read_csv("main/table_31_stu.csv") %>% difference_in_means(b_i_jeemain_score ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+read_csv("main/students_national.csv") %>% difference_in_means(b_i_jeemain_score ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
 ```
 
 
@@ -787,7 +787,7 @@ read_csv("main/table_31_stu.csv") %>% difference_in_means(b_i_jeemain_score ~ re
 
 ```{r}
 # Rename fac_fac_reservation and ensure it's numeric
-data <- read_csv("appendix/figure_E_faculty_effects.csv")
+data <- read_csv("appendix/figure_E.csv")
 
 # Set theme for all plots (matching white_tableau)
 theme_set(theme_minimal(base_family = "Arial Narrow") +
@@ -885,7 +885,7 @@ cdf_combined
 ## Table F1
 
 ```{r}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 ```
 
 Dependent variable means:
@@ -968,7 +968,7 @@ knitreg(list(lm_tpi1, lm_tpi2, lm_tpi3, lm_tpi4), custom.note = "%stars", stars 
 ## Table G1
 
 ```{r, results='asis'}
-df_temp <- read_csv("main/table_53_54.csv")
+df_temp <- read_csv("main/random_assignment.csv")
 
 lm1 <-
   df_temp %>%
@@ -1078,9 +1078,9 @@ knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 
 Model 1:
 
 ```{r, results='asis'}
-read_csv("main/table_55_model1.csv") %>%
+read_csv("main/table_55_semester.csv") %>%
   left_join(
-    read_csv("main/table_31_stu.csv") %>% select(studentnum, reservation_stu = reservation),
+    read_csv("main/students_national.csv") %>% select(studentnum, reservation_stu = reservation),
     by = "studentnum"
   ) %>% 
   mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
@@ -1095,13 +1095,13 @@ read_csv("main/table_55_model1.csv") %>%
 Model 2:
 
 ```{r, results='asis'}
-read_csv("main/table_55_model2.csv") %>% 
+read_csv("main/table_55_course.csv") %>% 
   left_join(
-    read_csv("main/table_31_stu.csv") %>% select(studentnum, reservation_stu = reservation),
+    read_csv("main/students_national.csv") %>% select(studentnum, reservation_stu = reservation),
     by = "studentnum"
   ) %>%
   left_join(
-    read_csv("main/table_53_54.csv") %>% select(facultynum, starts_with("fac_"), -fac_reservation) %>% distinct(),
+    read_csv("main/random_assignment.csv") %>% select(facultynum, starts_with("fac_"), -fac_reservation) %>% distinct(),
     by = "facultynum"
   ) %>%
   mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
@@ -1117,7 +1117,7 @@ Model 3:
 
 
 ```{r, results='asis'}
-read_csv("main/table_55_model3.csv") %>%
+read_csv("main/table_55_skills.csv") %>%
   lm_robust(e_g3_score ~ fac_reservation * reservation_stu + subject + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
     "fac_reservation" = "Reservation faculty",
@@ -1133,7 +1133,7 @@ read_csv("main/table_55_model3.csv") %>%
 Model 1:
 
 ```{r, results='asis'}
-read_csv("main/table_56_model1.csv") %>% 
+read_csv("main/table_56_attend.csv") %>% 
   lm_robust(e_attend ~ fac_reservation * reservation_stu + subject + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
     "fac_reservation" = "Reservation faculty",
@@ -1145,7 +1145,7 @@ read_csv("main/table_56_model1.csv") %>%
 Model 2:
 
 ```{r, results='asis'}
-read_csv("main/table_53_54.csv") %>%
+read_csv("main/random_assignment.csv") %>%
   mutate(
     miss_age = if_else(is.na(age), 1L, 0L),
     age = if_else(is.na(age), 0, age),
@@ -1173,7 +1173,7 @@ read_csv("main/table_53_54.csv") %>%
 Model 3:
 
 ```{r, results='asis'}
-read_csv("main/table_53_54.csv") %>%
+read_csv("main/random_assignment.csv") %>%
   mutate(
     miss_age = if_else(is.na(age), 1L, 0L),
     age = if_else(is.na(age), 0, age),
@@ -1202,7 +1202,7 @@ read_csv("main/table_53_54.csv") %>%
 Model 4:
 
 ```{r, results='asis'}
-read_csv("main/table_56_model4.csv") %>% 
+read_csv("main/table_56_research.csv") %>% 
   lm_robust(e_workprof_research ~ fac_reservation * reservation_stu + survey + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
   knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
     "fac_reservation" = "Reservation faculty",
@@ -1374,7 +1374,7 @@ read_csv("main/table_57.csv") %>%
 ## Table J1
 
 ```{r}
-df_temp <- read_csv("main/table_31_51_58_59_510.csv")
+df_temp <- read_csv("main/faculty_national.csv")
 ```
 
 
@@ -1438,7 +1438,7 @@ knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 
 
 ```{r, results='asis'}
 df_temp <-
-  read_csv("main/table_53_54.csv") %>%
+  read_csv("main/random_assignment.csv") %>%
   mutate(fe_var = str_c(department_id, course, sep = "_"))
 
 lm1 <-
