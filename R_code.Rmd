@@ -1,0 +1,1461 @@
+---
+title: "Affirmative Action, Faculty Productivity and Caste Interactions: Evidence from Engineering Colleges in India"
+author: "Robert Fairlie, Saurabh Khanna, Prashant Loyalka, Gagandeep Sachdeva<br/>"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: true
+    toc_depth: 6
+    number_sections: false
+---
+
+<br/>
+
+\captionsetup[table]{labelformat=empty}
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, fig.retina = 4)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+pacman::p_load(haven, estimatr, extrafont, texreg, janitor, hrbrthemes, xtable, papeR, tidyverse, Hmisc, skimr, datawizard, lme4, lattice, broom, fixest, lfe, survey, patchwork)
+```
+
+
+# Main Tables
+
+## Table 3.1
+
+Faculty and Student Characteristics in Engineering Colleges in India.
+
+```{r}
+# calculate weighted mean and sd using department-level weights ("sw_f") from the national representative sample
+
+weighted_mean_sd_multi <- function(data, vars, weight) {
+  data %>% 
+    summarise(
+      across(
+        all_of(vars),
+        list(
+          mean = ~ weighted.mean(.x, w = {{weight}}, na.rm = T),
+          sd = ~ sqrt(Hmisc::wtd.var(.x, weights = {{weight}}, na.rm = T))
+        ),
+        .names = "{col}_{fn}"
+      )
+    ) %>%
+    mutate(across(everything(), ~ round(.x, 2)))
+}
+```
+
+Faculty:
+
+```{r}
+read_csv("main/table_31_51_58_59_510.csv") %>% 
+  weighted_mean_sd_multi(c("fac_reservation", "fac_assistant_professor", "fac_associate_professor", "fac_professor", "fac_yearsinhighed", "fac_highest_degree_masters", "fac_highest_degree_phd", "fac_highest_degree_phd_in_prog",  "fac_degree_college_elite", "fac_female"), sw_f) %>% 
+  t()
+```
+
+Students:
+
+```{r}
+read_csv("main/table_31_stu.csv") %>%
+  weighted_mean_sd_multi(c("reservation", "female", "age", "father_college", "mother_college"), sw_f) %>% 
+  t()
+```
+
+## Table 5.1
+
+Faculty Qualifications by Reservation Status at Engineering and Technology Colleges in India
+
+Weighgted means:
+
+```{r}
+read_csv("main/table_31_51_58_59_510.csv") %>%
+  group_by(fac_reservation) %>%
+  drop_na(fac_reservation) %>%
+  summarise(
+    fac_assistant_professor = weighted.mean(fac_assistant_professor, w = sw_f, na.rm = T),
+    fac_associate_professor = weighted.mean(fac_associate_professor, w = sw_f, na.rm = T),
+    fac_professor = weighted.mean(fac_professor, w = sw_f, na.rm = T),
+    fac_yearsinhighed = weighted.mean(fac_yearsinhighed, w = sw_f, na.rm = T),
+    fac_highest_degree_phd = weighted.mean(fac_highest_degree_phd, w = sw_f, na.rm = T),
+    fac_highest_degree_phd_in_prog = weighted.mean(fac_highest_degree_phd_in_prog, w = sw_f, na.rm = T),
+    fac_highest_degree_masters = weighted.mean(fac_highest_degree_masters, w = sw_f, na.rm = T),
+    fac_degree_college_elite = weighted.mean(fac_degree_college_elite, w = sw_f, na.rm = T),
+    fac_female = weighted.mean(fac_female, w = sw_f, na.rm = T)
+  ) %>% 
+  mutate_all(~ round(.x, 2)) %>% 
+  arrange(-fac_reservation) %>% 
+  t()
+```
+
+Differences:
+
+```{r}
+svy <- svydesign(ids = ~1, weights = ~sw_f, data = read_csv("main/table_31_51_58_59_510.csv"))
+
+map_dfr(c("fac_assistant_professor", "fac_associate_professor", "fac_professor",
+          "fac_yearsinhighed", "fac_highest_degree_phd", "fac_highest_degree_phd_in_prog",
+          "fac_highest_degree_masters", "fac_degree_college_elite", "fac_female"),
+        ~{
+          tidy(svyttest(as.formula(paste(.x, "~ fac_reservation")), svy)) %>%
+            mutate(variable = .x)
+        }) %>% 
+  transmute(variable, estimate = round(estimate, 2), statistic, p.value, conf.low, conf.high)
+```
+
+
+
+## Table 5.2
+
+Tables 5.2 uses microdata from the 68th Round of the National Sample Survey's Employment and Unemployment Survey (Reference ID DDI-IND-MOSPI-NSSO-68-10-2013). Steps to replicate:
+
+1. Download the microdata setup from the following link: https://microdata.gov.in/NADA/index.php/catalog/127/study-description
+2. Follow the instructions for installing NESSTAR's Extraction Software (the exe file comes with the microdata)
+3. Extract each block as a .dta file into the source folder
+4. Use the Stata do-file titled "NSS_tables.do" to replicate the table.
+
+## Table 5.3
+
+Faculty Differences and Balance Checks for the Sample of Colleges with Random Assignment
+
+Faculty means and sds:
+
+```{r}
+df_temp <- read_csv("main/table_53_54.csv")
+  
+df_temp %>% 
+  summarise_at(
+    vars(starts_with("fac_")),
+    list(
+      mean = ~ round(mean(.x, na.rm = T), 2),
+      sd = ~ round(sd(.x, na.rm = T), 2)
+    )
+  ) %>% 
+  t()
+```
+
+Faculty differences:
+
+```{r, results='asis'}
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>% # course fixed effects within a department
+  lm_robust(fac_assistant_professor ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_associate_professor ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_professor ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_yearsinhighed ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_highest_degree_masters ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_highest_degree_phd ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_highest_degree_phd_in_prog ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_degree_college_elite ~ fac_reservation, data =  ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(fac_female ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 3, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+```
+
+Student means and SDs:
+
+```{r}
+df_temp %>%
+  summarise_at(
+    vars(reservation_stu, female, age, father_college, mother_college, b_i_jeemain_score, took_jee),
+    list(
+      mean = ~ round(mean(.x, na.rm = T), 2),
+      sd = ~ round(sd(.x, na.rm = T), 2)
+    )
+  ) %>% 
+  t()
+```
+
+
+Student differences:
+
+```{r, results='asis'}
+# Reservation status
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(reservation_stu ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Female
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(female ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Age
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(age ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Father attended college
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(father_college ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Mother attended college
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(mother_college ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Baseline academic skills (math and physics exams stacked)
+bind_rows(
+  df_temp %>% transmute(studentnum, fac_reservation, b_score = scale(b_math_g1_score) %>% as.vector, exam = "Math", facultynum, fe_var = str_c(department_id, course, sep = "_")) %>% drop_na(b_score),
+  df_temp %>% transmute(studentnum, fac_reservation, b_score = scale(b_physics_g1_score) %>% as.vector, exam = "Physics", facultynum, fe_var = str_c(department_id, course, sep = "_")) %>% drop_na(b_score)
+) %>%
+  lm_robust(b_score ~ fac_reservation + exam, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# JEE exam score
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(b_i_jeemain_score ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+
+# Reported taking JEE exam
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(took_jee ~ fac_reservation, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum) %>%
+  knitreg(include.ci = F, digits = 3, stars = c(0.01, 0.05, 0.1), caption="")
+```
+
+
+## Table 5.4
+
+Regressions for Student Course Grades Measuring Quality of Instruction, Reservation vs. General Category Faculty
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+```
+
+
+
+## Table 5.5
+
+Regressions for Follow-on Course Grades and Test Scores, Reservation vs. General Category Faculty
+
+Model 1:
+
+```{r, results='asis'}
+read_csv("main/table_55_model1.csv") %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+Model 2:
+
+```{r, results='asis'}
+read_csv("main/table_55_model2.csv") %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+Model 3:
+
+```{r, results='asis'}
+read_csv("main/table_55_model3.csv") %>%
+  lm_robust(e_g3_score ~ fac_reservation + subject + reservation_stu + female + age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+
+
+## Table 5.6
+
+Regressions for Additional Educational Outcomes, Reservation vs. General Category Faculty
+
+Model 1:
+
+```{r, results='asis'}
+read_csv("main/table_56_model1.csv") %>% 
+  lm_robust(e_attend ~ fac_reservation + subject + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+Model 2:
+
+```{r, results='asis'}
+read_csv("main/table_53_54.csv") %>%
+  mutate(
+    miss_age = if_else(is.na(age), 1L, 0L),
+    age = if_else(is.na(age), 0, age),
+  ) %>%
+  group_by(studentnum, e_dropped_out, reservation_stu, female, father_college, mother_college, age, miss_age, department_id) %>% 
+  summarise(
+    fac_reservation = mean(fac_reservation, na.rm = T) * 10,
+    fac_associate_professor = mean(fac_associate_professor, na.rm = T) * 10,
+    fac_professor = mean(fac_professor, na.rm = T) * 10,
+    fac_yearsinhighed = mean(fac_yearsinhighed, na.rm = T) * 10,
+    fac_highest_degree_phd = mean(fac_highest_degree_phd, na.rm = T) * 10,
+    fac_highest_degree_phd_in_prog = mean(fac_highest_degree_phd_in_prog, na.rm = T) * 10,
+    fac_degree_college_elite = mean(fac_degree_college_elite, na.rm = T) * 10,
+    fac_female = mean(fac_female, na.rm = T) * 10,
+  ) %>% 
+  ungroup() %>% 
+  mfx::probitmfx(e_dropped_out ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college + department_id, data = ., robust = T) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+Model 3:
+
+```{r, results='asis'}
+read_csv("main/table_53_54.csv") %>%
+  mutate(
+    miss_age = if_else(is.na(age), 1L, 0L),
+    age = if_else(is.na(age), 0, age),
+  ) %>%
+  group_by(studentnum, e_attend_grad_school, reservation_stu, female, father_college, mother_college, age, miss_age, department_id) %>% 
+  summarise(
+    fac_reservation = mean(fac_reservation, na.rm = T) * 10,
+    fac_associate_professor = mean(fac_associate_professor, na.rm = T) * 10,
+    fac_professor = mean(fac_professor, na.rm = T) * 10,
+    fac_yearsinhighed = mean(fac_yearsinhighed, na.rm = T) * 10,
+    fac_highest_degree_phd = mean(fac_highest_degree_phd, na.rm = T) * 10,
+    fac_highest_degree_phd_in_prog = mean(fac_highest_degree_phd_in_prog, na.rm = T) * 10,
+    fac_degree_college_elite = mean(fac_degree_college_elite, na.rm = T) * 10,
+    fac_female = mean(fac_female, na.rm = T) * 10,
+  ) %>% 
+  ungroup() %>% 
+  lm_robust(e_attend_grad_school ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>%
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+Model 4:
+
+```{r, results='asis'}
+read_csv("main/table_56_model4.csv") %>% 
+  lm_robust(e_workprof_research ~ fac_reservation + survey + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+
+## Table 5.7
+
+Regressions for Additional Educational Outcomes, Reservation vs. General Category Faculty Using the Second Cohort of Students
+
+Model 1:
+
+```{r, results='asis'}
+read_csv("main/table_57.csv") %>%
+  lm_robust(e_ee_short_score ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+Model 2:
+
+```{r, results='asis'}
+read_csv("main/table_57.csv") %>% 
+  lm_robust(e_cs_score ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+Model 3:
+
+```{r, results='asis'}
+read_csv("main/table_57.csv") %>%
+   mfx::probitmfx(expgrad4 ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college + department_id, data = ., robust = T) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+Model 4:
+
+```{r, results='asis'}
+read_csv("main/table_57.csv") %>%
+  lm_robust(e_attend_grad_school ~ fac_reservation + reservation_stu + female + age + miss_age + father_college + mother_college, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3)
+```
+
+
+
+
+## Table 5.8
+
+Regressions for Number of Publications per Year, Reservation Category vs. General Category Faculty using the National Sample
+
+```{r, results='asis'}
+lm_pub1 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(fac_publications ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_pub2 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_pub3 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_pub4 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+
+knitreg(list(lm_pub1, lm_pub2, lm_pub3, lm_pub4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.model.names = c("I", "II", "III", "IV"), custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+## Table 5.9
+
+Regressions for Funding Received, Reservation vs. General Category Faculty using the National Sample
+
+```{r, results='asis'}
+lm_fund1 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(funding_yesno ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_fund2 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_fund3 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_fund4 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+
+knitreg(list(lm_fund1, lm_fund2, lm_fund3, lm_fund4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.model.names = c("I", "II", "III", "IV"), custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+
+## Table 5.10
+
+Regressions for Administrative Positions Held, Reservation vs. General Category Faculty using the National Sample
+
+```{r, results='asis'}
+lm_adm1 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(admin_position_yesno ~ fac_reservation, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_adm2 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_adm3 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm_adm4 <-
+  read_csv("main/table_31_51_58_59_510.csv") %>%
+  lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+
+knitreg(list(lm_adm1, lm_adm2, lm_adm3, lm_adm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.model.names = c("I", "II", "III", "IV"), custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+
+## Table 5.11
+
+Regressions for Student Course Grades Measuring Quality of Instruction, Reservation Category Faculty Interacted with Reservation Category Students
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+# model 1
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+# model 2
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+# model 3
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+
+# model 4
+df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="")
+```
+
+
+## Table 5.12
+
+Regressions for Student Course Grades Measuring Teacher-Like-Me Interactions
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+# model 1
+lm1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 2
+lm2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + facultynum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 3
+lm3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, facultynum, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+  
+knitreg(list(lm1, lm2, lm3), digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, custom.coef.map	= list("fac_reservation" = "Reservation faculty", "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"), caption="")
+```
+
+
+## Table 5.13
+
+Regressions for Student Course Grades Measuring Quality of Instruction, Reservation Category Faculty Interacted with Detailed Reservation Category Student Groups
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+# model 1
+lm1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * category, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 2
+lm2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * category + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 3
+lm3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * category + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 4
+lm4 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * category + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1, lm2, lm3, lm4), digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="", custom.coef.map	= list(
+  "fac_reservation" = "Reservation faculty",
+  "fac_reservation:categorySC/ST" = "Reservation faculty × SC/ST student",
+  "fac_reservation:categoryOBC" = "Reservation faculty × OBC student"
+))
+```
+
+## Table 5.14
+
+Regressions for Student Course Grades Measuring Quality of Instruction, Reservation Category Faculty Interacted with Same Reservation Category Group Student
+
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+# model 1
+lm1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + same_category, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 2
+lm2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + same_category + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 3
+lm3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + same_category + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+# model 4
+lm4 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + same_category + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1, lm2, lm3, lm4), digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="", custom.coef.map	= list(
+  "same_category" = "Student-faculty same category",
+  "fac_reservation" = "Reservation faculty"
+))
+```
+
+
+----
+
+# Appendix
+
+## Table A1
+
+Tables A1 uses microdata from the 68th Round of the National Sample Survey's Employment and Unemployment Survey (Reference ID DDI-IND-MOSPI-NSSO-68-10-2013). Steps to replicate:
+
+1. Download the microdata setup from the following link: https://microdata.gov.in/NADA/index.php/catalog/127/study-description
+2. Follow the instructions for installing NESSTAR's Extraction Software (the exe file comes with the microdata)
+3. Extract each block as a .dta file into the source folder
+4. Use the Stata do-file titled "NSS_tables.do" to replicate the table.
+
+
+## Table B1
+
+Faculty:
+
+```{r}
+read_csv("main/table_53_54.csv") %>% 
+  distinct(facultynum, fac_reservation, fac_assistant_professor, fac_associate_professor, fac_professor, fac_yearsinhighed, fac_highest_degree_masters, fac_highest_degree_phd_in_prog, fac_highest_degree_phd, fac_degree_college_elite, fac_female) %>% 
+  skim(-facultynum)
+```
+
+
+Students:
+
+```{r}
+read_csv("main/table_53_54.csv") %>% 
+  distinct(studentnum, reservation_stu, female, age, father_college, mother_college) %>% 
+  skim(-studentnum)
+```
+
+## Table C1
+
+
+**Panel A**
+
+```{r}
+read_csv("appendix/table_C1_panela.csv") %>%
+  group_by(semester) %>% 
+  summarise(
+    n = sum(n()),
+    reservation = round(weighted.mean(fac_reservation, w = sw_f, na.rm = T) * 100, 1)
+  ) %>% 
+  mutate(
+    non_reservation = (100 - reservation) %>% str_c("%"),
+    reservation = reservation %>% str_c("%")
+  ) %>% 
+  clean_names(case = "title") %>% 
+  select(-N)
+```
+
+**Panel B**
+
+Semesters:
+
+```{r}
+read_csv("main/table_53_54.csv") %>%
+  tabyl(semester, fac_reservation, show_na = F) %>% 
+  as_tibble() %>% 
+  select(semester, res = `1`, general = `0`) %>% 
+  mutate(
+    total = res + general,
+    res = res / total,
+    general = general / total
+  )
+```
+
+Introductory courses:
+
+```{r}
+read_csv("main/table_53_54.csv") %>% 
+  tabyl(introductory, fac_reservation, show_na = F) %>% 
+  as_tibble() %>%
+  arrange(desc(introductory)) %>%
+  select(introductory, res = `1`, general = `0`) %>% 
+  mutate(
+    total = res + general,
+    res = res / total,
+    general = general / total
+  )
+```
+
+**Panel C**
+
+```{r}
+read_csv("appendix/table_C1_panelc.csv") %>%
+  group_by(year) %>% 
+  summarise(
+    n = sum(n()),
+    reservation = round(weighted.mean(fac_reservation, w = sw_f, na.rm = T) * 100, 1)
+  ) %>% 
+  mutate(
+    non_reservation = (100 - reservation) %>% str_c("%"),
+    reservation = reservation %>% str_c("%")
+  ) %>%
+  clean_names(case = "title") %>% 
+  select(-N)
+```
+
+## Table D1
+
+```{r}
+# new table code
+
+read_csv("main/table_31_stu.csv") %>% 
+  drop_na(reservation) %>%
+  group_by(reservation) %>%
+  summarise(
+    female = round(weighted.mean(female, w = sw_f, na.rm = T), 2),
+    age = round(weighted.mean(age, w = sw_f, na.rm = T), 2),
+    father_attended_college = round(weighted.mean(father_college, w = sw_f, na.rm = T), 2),
+    mother_attended_college = round(weighted.mean(mother_college, w = sw_f, na.rm = T), 2),
+    b_i_jeemain_score = round(weighted.mean(b_i_jeemain_score, w = sw_f, na.rm = T), 2)
+  ) %>%
+  pivot_longer(cols = -reservation) %>%
+  pivot_wider(names_from = reservation, values_from = value) %>% 
+  select(name, reserved = `1`, general = `0`)
+```
+
+
+```{r, results='asis'}
+read_csv("main/table_31_stu.csv") %>% difference_in_means(female ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+
+read_csv("main/table_31_stu.csv") %>% difference_in_means(age ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+
+read_csv("main/table_31_stu.csv") %>% difference_in_means(father_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+
+read_csv("main/table_31_stu.csv") %>% difference_in_means(mother_college ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+
+read_csv("main/table_31_stu.csv") %>% difference_in_means(b_i_jeemain_score ~ reservation, data = ., weights = sw_f, ci = T) %>% knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "")
+```
+
+
+## Figure E1 and E2
+
+```{r}
+# Rename fac_fac_reservation and ensure it's numeric
+data <- read_csv("appendix/figure_E_faculty_effects.csv")
+
+# Set theme for all plots (matching white_tableau)
+theme_set(theme_minimal(base_family = "Arial Narrow") +
+            theme(panel.grid.minor = element_blank(),
+                  plot.title = element_text(size = 10),
+                  axis.title = element_text(size = 9),
+                  legend.position = "bottom",
+                  legend.direction = "horizontal"))
+
+# Function to create kernel density plot
+create_kdensity <- function(data, var, title, xtitle) {
+  var_sym <- sym(var)
+  
+  # Calculate statistics
+  m <- mean(data[[var]], na.rm = TRUE)
+  s <- sd(data[[var]], na.rm = TRUE)
+  
+  # Create plot
+  ggplot(data %>% filter(!is.na(fac_reservation)), 
+         aes(x = !!var_sym, color = factor(fac_reservation), linetype = factor(fac_reservation))) +
+    geom_density(linewidth = 0.7, key_glyph = "path") +
+    geom_vline(xintercept = m, color = "black", linetype = "dotted", linewidth = 0.5) +
+    geom_vline(xintercept = m + s, color = "black", linetype = "dotted", linewidth = 0.5) +
+    geom_vline(xintercept = m - s, color = "black", linetype = "dotted", linewidth = 0.5) +
+    scale_color_manual(values = c("0" = "black", "1" = "black"),
+                       labels = c("0" = "General Category", "1" = "Reservation Category"),
+                       name = NULL) +
+    scale_linetype_manual(values = c("0" = "solid", "1" = "dashed"),
+                          labels = c("0" = "General Category", "1" = "Reservation Category"),
+                          name = NULL) +
+    labs(title = title,
+         x = xtitle,
+         y = "Density") +
+    guides(color = guide_legend(nrow = 1),
+           linetype = guide_legend(nrow = 1))
+}
+
+# Function to create CDF plot
+create_cdf <- function(data, var, title) {
+  var_sym <- sym(var)
+  
+  ggplot(data %>% filter(!is.na(fac_reservation)), 
+         aes(x = !!var_sym, color = factor(fac_reservation), linetype = factor(fac_reservation))) +
+    stat_ecdf(linewidth = 0.7, key_glyph = "path") +
+    scale_color_manual(values = c("0" = "black", "1" = "black"),
+                       labels = c("0" = "General Category", "1" = "Reservation Category"),
+                       name = NULL) +
+    scale_linetype_manual(values = c("0" = "solid", "1" = "dashed"),
+                          labels = c("0" = "General Category", "1" = "Reservation Category"),
+                          name = NULL) +
+    labs(title = title,
+         x = "Value",
+         y = "Cumulative Probability") +
+    guides(color = guide_legend(nrow = 1),
+           linetype = guide_legend(nrow = 1))
+}
+
+# Create individual plots
+kd_effect1 <- create_kdensity(data, "effect1", 
+                              "Faculty Fixed Effect 1",
+                              "Faculty Fixed Effect (Past Course Grades)")
+
+kd_effect2 <- create_kdensity(data, "effect2", 
+                              "Faculty Fixed Effect 2",
+                              "Faculty Fixed Effect (Baseline Academic Skills Test)")
+
+cdf_effect1 <- create_cdf(data, "effect1", "Faculty Fixed Effect 1")
+cdf_effect2 <- create_cdf(data, "effect2", "Faculty Fixed Effect 2")
+
+# Combine kernel density plots
+pdf_combined <- (kd_effect1 | kd_effect2) +
+  plot_annotation(title = "Faculty Fixed Effects (PDFs)",
+                  theme = theme(plot.title = element_text(size = 10, hjust = 0.5)))
+
+# Combine CDF plots
+cdf_combined <- (cdf_effect1 | cdf_effect2) +
+  plot_annotation(title = "Faculty Fixed Effects (Cumulative Distributions)",
+                  theme = theme(plot.title = element_text(size = 10, hjust = 0.5)))
+```
+
+Figure E1:
+
+```{r}
+pdf_combined
+```
+
+
+Figure E2:
+
+```{r}
+cdf_combined
+```
+
+
+## Table F1
+
+```{r}
+df_temp <- read_csv("main/table_53_54.csv")
+```
+
+Dependent variable means:
+
+```{r}
+df_temp %>%
+  select(
+    weekly_hours_advising_students,
+    weekly_hours_course,
+    weekly_hours_lessons_planning,
+    weekly_hours_teaching_class,
+    weekly_hours_tutoring,
+    in_class_features = tpi_score3,
+    assignments = tpi_score4,
+    feedback_testing = tpi_score5,
+    collaboration = tpi_score8) %>% 
+  summary()
+```
+
+
+```{r, results='asis'}
+lm_hours1 <-
+  df_temp %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(weekly_hours_advising_students ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_hours2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(weekly_hours_course ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_hours3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(weekly_hours_lessons_planning ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_hours4 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(weekly_hours_teaching_class ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_hours5 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(weekly_hours_tutoring ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+
+knitreg(list(lm_hours1, lm_hours2, lm_hours3, lm_hours4, lm_hours5), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, custom.model.names = c("Advising students", "Course related work", "Lesson planning", "Teaching class", "Tutoring"), custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+
+## Table F2
+
+```{r, results='asis'}
+lm_tpi1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(tpi_score3 ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_tpi2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(tpi_score4 ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_tpi3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(tpi_score5 ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm_tpi4 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(tpi_score8 ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+
+knitreg(list(lm_tpi1, lm_tpi2, lm_tpi3, lm_tpi4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, custom.model.names = c("In-class features and activities", "Assignments", "Feedback and testing", "Collaboration"), custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+
+## Table G1
+
+```{r, results='asis'}
+df_temp <- read_csv("main/table_53_54.csv")
+
+lm1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm2 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  mutate(
+    # handle missingness in controls: age, female, reservation_stu, father_college, mother_college
+    miss_age = if_else(is.na(age), 1L, 0L),
+    age = if_else(is.na(age), 0, age),
+    miss_female = if_else(is.na(female), 1L, 0L),
+    female = if_else(is.na(female), 0L, female),
+    miss_reservation_stu = if_else(is.na(reservation_stu), 1L, 0L),
+    reservation_stu = if_else(is.na(reservation_stu), 0L, reservation_stu),
+    miss_father_college = if_else(is.na(father_college), 1L, 0L),
+    father_college = if_else(is.na(father_college), 0L, father_college),
+    miss_mother_college = if_else(is.na(mother_college), 1L, 0L),
+    mother_college = if_else(is.na(mother_college), 0L, mother_college)
+  ) %>% 
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female + female + reservation_stu + age + father_college + mother_college + miss_female + miss_reservation_stu + miss_age + miss_father_college + miss_mother_college, data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1, lm2, lm3), digits = 2, stars = c(0.01, 0.05, 0.1), include.ci = F, caption="", custom.coef.map	= list("fac_reservation" = "Reservation faculty", "fac_associate_professor" = "Associate professor", "fac_professor" = "Professor", "fac_yearsinhighed" = "Experience in years", "fac_highest_degree_phd" = "Highest degree is PhD", "fac_highest_degree_phd_in_prog" = "Highest degree is PhD in progress", "fac_degree_college_elite" = "Degree college elite", "fac_female" = "Female"))
+```
+
+
+## Table G2
+
+```{r, results='asis'}
+lm1 <-
+  df_temp %>% 
+  inner_join(df_temp %>% count(department_id, course, facultynum, name = "classroom_size")) %>% 
+  mutate(class_wt = 1/classroom_size) %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum, weights = class_wt)
+
+lm2 <-
+  df_temp %>% 
+  inner_join(df_temp %>% count(department_id, course, facultynum, name = "classroom_size")) %>% 
+  mutate(class_wt = 1/classroom_size) %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum, weights = class_wt)
+
+lm3 <-
+  df_temp %>% 
+  inner_join(df_temp %>% count(department_id, course, facultynum, name = "classroom_size")) %>% 
+  mutate(class_wt = 1/classroom_size) %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum, weights = class_wt)
+
+lm4 <-
+  df_temp %>% 
+  inner_join(df_temp %>% count(department_id, course, facultynum, name = "classroom_size")) %>% 
+  mutate(class_wt = 1/classroom_size) %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum, weights = class_wt)
+
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, custom.model.names = c("I", "II", "III", "IV"), dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2, custom.coef.names = c("Reservation faculty", "Associate professor", "Professor", "Experience in years", "Highest degree is PhD", "Highest degree is PhD in progress", "Degree college elite", "Female"))
+```
+
+
+## Table G3
+
+```{r, results='asis'}
+lm1 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  mutate(fac_caste = fac_caste %>% as_factor()) %>%
+  mutate(fac_caste = fct_collapse(fac_caste, "SC_ST_Others" = c("SC", "ST", "Others"))) %>%
+  lm_robust(course_grade ~ fac_caste, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm2 <-
+  df_temp %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  mutate(fac_caste = fac_caste %>% as_factor()) %>%
+  mutate(fac_caste = fct_collapse(fac_caste, "SC_ST_Others" = c("SC", "ST", "Others"))) %>%
+  lm_robust(course_grade ~ fac_caste + fac_associate_professor + fac_professor + fac_yearsinhighed, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm3 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  mutate(fac_caste = fac_caste %>% as_factor()) %>%
+  mutate(fac_caste = fct_collapse(fac_caste, "SC_ST_Others" = c("SC", "ST", "Others"))) %>%
+  lm_robust(course_grade ~ fac_caste + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+lm4 <-
+  df_temp %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  mutate(fac_caste = fac_caste %>% as_factor()) %>% 
+  mutate(fac_caste = fct_collapse(fac_caste, "SC_ST_Others" = c("SC", "ST", "Others"))) %>%
+  lm_robust(course_grade ~ fac_caste + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, custom.model.names = c("I", "II", "III", "IV"), dcolumn = TRUE, booktabs = TRUE, float.pos = "H", caption = "", digits = 2)
+```
+
+
+## Table H1
+
+Model 1:
+
+```{r, results='asis'}
+read_csv("main/table_55_model1.csv") %>%
+  left_join(
+    read_csv("main/table_31_stu.csv") %>% select(studentnum, reservation_stu = reservation),
+    by = "studentnum"
+  ) %>% 
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+Model 2:
+
+```{r, results='asis'}
+read_csv("main/table_55_model2.csv") %>% 
+  left_join(
+    read_csv("main/table_31_stu.csv") %>% select(studentnum, reservation_stu = reservation),
+    by = "studentnum"
+  ) %>%
+  left_join(
+    read_csv("main/table_53_54.csv") %>% select(facultynum, starts_with("fac_"), -fac_reservation) %>% distinct(),
+    by = "facultynum"
+  ) %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(course_grade ~ fac_reservation * reservation_stu + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., fixed_effects = ~ studentnum + fe_var, se_type = "stata", clusters = facultynum) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+Model 3:
+
+
+```{r, results='asis'}
+read_csv("main/table_55_model3.csv") %>%
+  lm_robust(e_g3_score ~ fac_reservation * reservation_stu + subject + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+
+
+## Table H2
+
+Model 1:
+
+```{r, results='asis'}
+read_csv("main/table_56_model1.csv") %>% 
+  lm_robust(e_attend ~ fac_reservation * reservation_stu + subject + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+Model 2:
+
+```{r, results='asis'}
+read_csv("main/table_53_54.csv") %>%
+  mutate(
+    miss_age = if_else(is.na(age), 1L, 0L),
+    age = if_else(is.na(age), 0, age),
+  ) %>%
+  group_by(studentnum, e_dropped_out, reservation_stu, female, father_college, mother_college, age, miss_age, department_id) %>% 
+  summarise(
+    fac_reservation = mean(fac_reservation, na.rm = T) * 10,
+    fac_associate_professor = mean(fac_associate_professor, na.rm = T) * 10,
+    fac_professor = mean(fac_professor, na.rm = T) * 10,
+    fac_yearsinhighed = mean(fac_yearsinhighed, na.rm = T) * 10,
+    fac_highest_degree_phd = mean(fac_highest_degree_phd, na.rm = T) * 10,
+    fac_highest_degree_phd_in_prog = mean(fac_highest_degree_phd_in_prog, na.rm = T) * 10,
+    fac_degree_college_elite = mean(fac_degree_college_elite, na.rm = T) * 10,
+    fac_female = mean(fac_female, na.rm = T) * 10,
+  ) %>% 
+  ungroup() %>% 
+  mfx::probitmfx(e_dropped_out ~ fac_reservation * reservation_stu + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female + department_id, data = ., robust = T) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 6, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+Model 3:
+
+```{r, results='asis'}
+read_csv("main/table_53_54.csv") %>%
+  mutate(
+    miss_age = if_else(is.na(age), 1L, 0L),
+    age = if_else(is.na(age), 0, age),
+  ) %>%
+  group_by(studentnum, e_attend_grad_school, reservation_stu, female, father_college, mother_college, age, miss_age, department_id) %>% 
+  summarise(
+    fac_reservation = mean(fac_reservation, na.rm = T) * 10,
+    fac_associate_professor = mean(fac_associate_professor, na.rm = T) * 10,
+    fac_professor = mean(fac_professor, na.rm = T) * 10,
+    fac_yearsinhighed = mean(fac_yearsinhighed, na.rm = T) * 10,
+    fac_highest_degree_phd = mean(fac_highest_degree_phd, na.rm = T) * 10,
+    fac_highest_degree_phd_in_prog = mean(fac_highest_degree_phd_in_prog, na.rm = T) * 10,
+    fac_degree_college_elite = mean(fac_degree_college_elite, na.rm = T) * 10,
+    fac_female = mean(fac_female, na.rm = T) * 10,
+  ) %>% 
+  ungroup() %>% 
+  lm_robust(e_attend_grad_school ~ fac_reservation * reservation_stu + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>%
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+
+Model 4:
+
+```{r, results='asis'}
+read_csv("main/table_56_model4.csv") %>% 
+  lm_robust(e_workprof_research ~ fac_reservation * reservation_stu + survey + female + age + miss_age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id) %>% 
+  knitreg(custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+
+## Table I1
+
+```{r}
+df_year34 <- read_csv("appendix/table_I1.csv")
+```
+
+
+Faculty:
+
+```{r}
+df_year34 %>%
+  skim(bfac_reservation, bfac_assistant_professor, bfac_associate_professor, bfac_professor, bfac_yearsinhighed, bfac_highest_degree_masters, bfac_highest_degree_phd, bfac_highest_degree_phd_in_prog, bfac_degree_college_elite, bfac_female) %>%
+  as_tibble() %>%
+  select(skim_variable, numeric.mean, numeric.sd) %>%
+  mutate_if(is.numeric, ~ round(., 2))
+```
+
+```{r, results='asis'}
+# fac regressions
+lm1a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_assistant_professor ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm2a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_associate_professor ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm3a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_professor ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm4a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_yearsinhighed ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm5a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_highest_degree_masters ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm6a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_highest_degree_phd ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm7a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_highest_degree_phd_in_prog ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm8a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_degree_college_elite ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm9a <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(bfac_female ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1a, lm2a, lm3a, lm4a, lm5a, lm6a, lm7a, lm8a, lm9a), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 3, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.coef.map = list("bfac_reservation" = "Res Faculty"))
+```
+
+
+
+Students:
+
+```{r}
+df_year34 %>%
+  skim(reservation_stu, female, age, father_college, mother_college, b_i_jeemain_score, took_jee) %>% 
+  as_tibble() %>%
+  select(skim_variable, numeric.mean, numeric.sd) %>%
+  mutate_if(is.numeric, ~ round(., 2))
+```
+
+
+```{r, results='asis'}
+# stu regressions
+lm1b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(female ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm2b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(reservation_stu ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm3b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(age ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm4b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(father_college ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm5b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(mother_college ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm6b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(b_i_jeemain_score ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+lm7b <-
+  df_year34 %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_")) %>%
+  lm_robust(took_jee ~ bfac_reservation , data = ., fixed_effects = ~ fe_var, se_type = "stata", clusters = facultynum)
+
+knitreg(list(lm1b, lm2b, lm3b, lm4b, lm5b), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 3, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.coef.map = list("bfac_reservation" = "Res Faculty"), custom.model.names = c("Female", "Reservation", "Age", "Father college", "Mother college"))
+
+knitreg(list(lm6b, lm7b), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 3, include.nclust = F, include.rsquared = F, include.adjrs = F, include.rmse = F, custom.coef.map = list("bfac_reservation" = "Res Faculty"), custom.model.names = c("JEE score", "Took JEE"))
+```
+
+
+## Table I2
+
+Model 1:
+
+```{r, results='asis'}
+lm1 <-
+  read_csv("main/table_57.csv") %>%
+  lm_robust(e_ee_short_score ~ fac_reservation * reservation_stu + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id)
+
+lm2 <-
+  read_csv("main/table_57.csv") %>% 
+  lm_robust(e_cs_score ~ fac_reservation * reservation_stu + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id)
+
+lm3 <-
+  read_csv("main/table_57.csv") %>%
+   mfx::probitmfx(expgrad4 ~ fac_reservation * reservation_stu + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female + department_id, data = ., robust = T)
+
+lm4 <-
+  read_csv("main/table_57.csv") %>%
+  lm_robust(e_attend_grad_school ~ fac_reservation * reservation_stu + female + age + father_college + mother_college + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = ., se_type = "stata", fixed_effects = ~ department_id)
+
+knitreg(
+  list(lm1, lm2, lm3, lm4),
+  custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = FALSE, caption = "", digits = 3, custom.coef.map	= list(
+    "fac_reservation" = "Reservation faculty",
+    "reservation_stu" = "Reservation student",
+    "fac_reservation:reservation_stu" = "Reservation faculty × Reservation student"
+  ))
+```
+
+```{r}
+read_csv("main/table_57.csv") %>% 
+  skim(e_ee_short_score, e_cs_score, expgrad4, e_attend_grad_school)
+```
+
+
+## Table J1
+
+```{r}
+df_temp <- read_csv("main/table_31_51_58_59_510.csv")
+```
+
+
+```{r, results='asis'}
+lm1 <- lm_robust(efac_pub_intl ~ fac_reservation, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm2 <- lm_robust(efac_pub_intl ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm3 <- lm_robust(efac_pub_intl ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm4 <- lm_robust(efac_pub_intl ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 2, include.nclust = F)
+```
+
+## Table J2
+
+```{r, results='asis'}
+lm1 <- lm_robust(efac_pub_sci_ei_ssci ~ fac_reservation, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm2 <- lm_robust(efac_pub_sci_ei_ssci ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm3 <- lm_robust(efac_pub_sci_ei_ssci ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm4 <- lm_robust(efac_pub_sci_ei_ssci ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 4, include.nclust = F)
+```
+
+## Table J3
+
+```{r, results='asis'}
+lm1 <- lm_robust(govt_funding_yesno ~ fac_reservation, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm2 <- lm_robust(govt_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm3 <- lm_robust(govt_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm4 <- lm_robust(govt_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 4, include.nclust = F)
+```
+
+
+## Table J4
+
+```{r, results='asis'}
+lm1 <- lm_robust(private_funding_yesno ~ fac_reservation, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm2 <- lm_robust(private_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm3 <- lm_robust(private_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+lm4 <- lm_robust(private_funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", weights = sw_f, fixed_effects = ~ univcode + majtype)
+
+knitreg(list(lm1, lm2, lm3, lm4), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 4, include.nclust = F)
+```
+
+
+## Table J5
+
+```{r, results='asis'}
+df_temp <-
+  read_csv("main/table_53_54.csv") %>%
+  mutate(fe_var = str_c(department_id, course, sep = "_"))
+
+lm1 <-
+  lm_robust(fac_publications ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", fixed_effects = ~ fe_var + studentnum, clusters = facultynum)
+
+lm2 <-
+  lm_robust(efac_pub_intl ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", fixed_effects = ~ fe_var + studentnum, clusters = facultynum)
+
+lm3 <-
+  lm_robust(efac_pub_sci_ei_ssci ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", fixed_effects = ~ fe_var + studentnum, clusters = facultynum)
+
+lm4 <-
+  lm_robust(funding_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", fixed_effects = ~ fe_var + studentnum, clusters = facultynum)
+
+lm5 <-
+  lm_robust(admin_position_yesno ~ fac_reservation + fac_associate_professor + fac_professor + fac_yearsinhighed + fac_highest_degree_phd + fac_highest_degree_phd_in_prog + fac_degree_college_elite + fac_female, data = df_temp, se_type = "stata", fixed_effects = ~ fe_var + studentnum, clusters = facultynum)
+
+knitreg(list(lm1, lm2, lm3, lm4, lm5), custom.note = "%stars", stars = c(0.01, 0.05, 0.1), include.ci = F, dcolumn = T, booktabs = T, float.pos = "H", caption = "", digits = 2, include.nclust = F)
+```
+
