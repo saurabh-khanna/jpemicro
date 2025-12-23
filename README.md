@@ -2,6 +2,21 @@
 
 **Authors**: Robert Fairlie, Saurabh Khanna, Prashant Loyalka, Gagandeep Sachdeva
 
+Data available at [JPE Micro Dataverse Site](https://doi.org/10.7910/DVN/N2NKEG).
+
+```bibtex
+@data{DVN/N2NKEG_2025,
+author = {Fairlie, Robert and Khanna, Saurabh and Loyalka, Prashant and Sachdeva, Gagandeep},
+publisher = {Harvard Dataverse},
+title = {{Replication Data for: Affirmative Action, Faculty Productivity and Caste Interactions: Evidence from Engineering Colleges in India}},
+UNF = {UNF:6:qeyZgzh755yMfO54GvLvOA==},
+year = {2025},
+version = {DRAFT VERSION},
+doi = {10.7910/DVN/N2NKEG},
+url = {https://doi.org/10.7910/DVN/N2NKEG}
+}
+```
+
 ## Replication Files Guide
 
 This document maps CSV data files to the tables and figures in the paper.
